@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ComboTracker } from './combo/combo-tracker';
+import { RidiculousTracker } from './ridiculous/ridiculous-tracker';
 import { NeovimClientManager } from './nvim/neovim-client';
 import { NeovimPlugin } from './nvim/plugin';
 
@@ -21,6 +22,7 @@ export function activate(context: vscode.ExtensionContext) {
 			powermodeThreshold: POWERMODE_THRESHOLD,
 			outputChannel,
 		}),
+		new RidiculousTracker(context),
 	];
 
 	// Collect all autocmd handlers from plugins
@@ -29,7 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
 	neovimClientManager = new NeovimClientManager(outputChannel, autocmdHandlers);
 	neovimClientManager.connect()
 		.catch(error => {
-			outputChannel.appendLine(`Could not connect to existing Neovim client: ${error}`);
+			console.error('[nvim-power-mode] Could not connect to existing Neovim client:', error);
 			vscode.window.showErrorMessage('Failed to connect to vscode-neovim. Make sure the extension is running.');
 		});
 }
