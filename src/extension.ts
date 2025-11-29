@@ -4,9 +4,6 @@ import { RidiculousTracker } from './ridiculous/ridiculous-tracker';
 import { NeovimClientManager } from './nvim/neovim-client';
 import { NeovimPlugin } from './nvim/plugin';
 
-const COMBO_TIMEOUT = 5; // seconds
-const POWERMODE_THRESHOLD = 10;
-
 let neovimClientManager: NeovimClientManager | null = null;
 let plugins: NeovimPlugin[] = [];
 let outputChannel: vscode.OutputChannel;
@@ -18,8 +15,8 @@ export function activate(context: vscode.ExtensionContext) {
 	// Initialize plugins
 	plugins = [
 		new ComboTracker({
-			comboTimeout: COMBO_TIMEOUT,
-			powermodeThreshold: POWERMODE_THRESHOLD,
+			comboTimeout: 5,  // seconds
+			powermodeThreshold: 10,
 			outputChannel,
 		}),
 		new RidiculousTracker(context),
