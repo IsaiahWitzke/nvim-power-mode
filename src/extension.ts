@@ -1,8 +1,17 @@
 import * as vscode from 'vscode';
 import { NeovimClient } from 'neovim';
+import { ComboMeter } from './combo/combo-meter';
 
 let nvimClient: NeovimClient | null = null;
 let outputChannel: vscode.OutputChannel;
+let comboMeter: ComboMeter | null = null;
+
+// Combo state
+let currentCombo = 0;
+let comboTimeoutHandle: NodeJS.Timeout | null = null;
+const COMBO_TIMEOUT = 5; // seconds
+const POWERMODE_THRESHOLD = 10;
+let isPowermodeActive = false;
 
 interface AutocmdHandler {
 	event: string;
@@ -10,17 +19,62 @@ interface AutocmdHandler {
 	luaCallback?: string;
 }
 
+function isReadOnlyEditor(editor: vscode.TextEditor): boolean {
+	return /^(output|debug|vscode-.*)/.test(editor.document.uri.scheme);
+}
+
+function handleTextChange() {
+	const editor = vscode.window.activeTextEditor;
+	if (!editor) {
+		return;
+	}
+
+	// Ignore text changes in read-only editors (output panel, debug console, etc.)
+	if (isReadOnlyEditor(editor)) {
+		return;
+	}
+
+	currentCombo++;
+	outputChannel.appendLine(`Combo: ${currentCombo}`);
+
+	// Check for powermode activation
+	if (!isPowermodeActive && currentCombo >= POWERMODE_THRESHOLD) {
+		isPowermodeActive = true;
+		comboMeter?.onPowermodeStart(currentCombo);
+		outputChannel.appendLine('POWER MODE ACTIVATED!');
+	}
+
+	// Reset combo timeout
+	if (comboTimeoutHandle) {
+		clearTimeout(comboTimeoutHandle);
+	}
+	comboTimeoutHandle = setTimeout(() => {
+		const finalCombo = currentCombo;
+		if (isPowermodeActive) {
+			comboMeter?.onPowermodeStop();
+			isPowermodeActive = false;
+		}
+		comboMeter?.onComboStop();
+		currentCombo = 0;
+		outputChannel.appendLine(`Combo ended at: ${finalCombo}`);
+	}, COMBO_TIMEOUT * 1000);
+
+	comboMeter?.updateCombo(currentCombo, COMBO_TIMEOUT, isPowermodeActive, editor);
+}
+
 const AUTOCMD_HANDLERS: AutocmdHandler[] = [
 	{
 		event: 'TextChangedI',
-		handler: (data) => {
+		handler: (_data) => {
 			outputChannel.appendLine(`Insert mode text change`);
+			handleTextChange();
 		},
 	},
 	{
 		event: 'TextChanged',
-		handler: (data) => {
+		handler: (_data) => {
 			outputChannel.appendLine(`Normal mode text change (includes undo/redo)`);
+			handleTextChange();
 		},
 	},
 	{
@@ -35,6 +89,8 @@ const AUTOCMD_HANDLERS: AutocmdHandler[] = [
 export function activate(context: vscode.ExtensionContext) {
 	outputChannel = vscode.window.createOutputChannel('Neovim power mode events');
 	context.subscriptions.push(outputChannel);
+
+	comboMeter = new ComboMeter();
 
 	getExistingNeovimClient()
 		.then(client => {
@@ -74,6 +130,12 @@ async function getExistingNeovimClient(): Promise<NeovimClient> {
 }
 
 export function deactivate() {
+	comboMeter?.dispose();
+	comboMeter = null;
+	if (comboTimeoutHandle) {
+		clearTimeout(comboTimeoutHandle);
+		comboTimeoutHandle = null;
+	}
 	if (nvimClient) {
 		nvimClient.removeAllListeners();
 		nvimClient = null;
