@@ -9,14 +9,12 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "nvim-power-mode.helloWorld",
-        "title": "Hello World"
-      },
       {
         "command": "nvim-power-mode.start",
         "title": "Nvim Power Mode: Start Neovim Client"
