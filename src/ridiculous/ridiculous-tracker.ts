@@ -26,6 +26,12 @@ export class RidiculousTracker implements NeovimPlugin {
 	private lastLineByEditor = new WeakMap<vscode.TextEditor, number>();
 	private revealedForSound = false;
 
+	// Track operator-pending mode for command chains
+	private isInOperatorPending = false;
+	private commandBuilder = '';
+	private lastMode = '';
+	private pendingCount = 0;
+
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
 
@@ -79,8 +85,49 @@ export class RidiculousTracker implements NeovimPlugin {
 			vscode.window.onDidChangeTextEditorSelection(e => this.handleSelectionChange(e))
 		);
 
-		// No autocmd handlers needed - we use VSCode events directly
-		this.autocmdHandlers = [];
+		// Setup autocmd handlers for detecting vim command chains
+		// We'll use TextChanged in normal mode to detect when an operator command completes
+		// and TextYankPost to capture yank commands specifically
+		this.autocmdHandlers = [
+			{
+				event: 'ModeChanged',
+				handler: (data) => this.handleModeChange(data),
+				luaCallback: `
+					local mode_info = vim.api.nvim_get_mode()
+					local mode = mode_info.mode
+					return {
+						mode = mode
+					}
+				`,
+			},
+			{
+				event: 'TextChanged',
+				handler: (data) => this.handleTextChangedVim(data),
+				luaCallback: `
+					-- Try to capture the last executed command
+					local ok, reg = pcall(vim.fn.getreg, '.')
+					local cmd = ok and reg or ''
+					return {
+						lastChange = cmd
+					}
+				`,
+			},
+			{
+				event: 'TextYankPost',
+				handler: (data) => this.handleYank(data),
+				luaCallback: `
+					local event = vim.v.event or {}
+					local operator = event.operator or 'y'
+					local regtype = event.regtype or 'v'
+					local visual = event.visual or false
+					return {
+						operator = operator,
+						regtype = regtype,
+						visual = visual
+					}
+				`,
+			},
+		];
 	}
 
 	public getAutocmdHandlers(): readonly AutocmdHandler[] {
@@ -229,6 +276,76 @@ export class RidiculousTracker implements NeovimPlugin {
 			this.effects.showNewline(editor, this.settings.shake);
 		}
 		this.lastLineByEditor.set(editor, now);
+	}
+
+	private handleModeChange(data: any): void {
+		const mode = data.mode || '';
+
+		console.log(`[ridiculous] Mode: ${this.lastMode} -> ${mode}`);
+
+		// Track when entering/exiting operator-pending mode
+		if ((mode === 'no' || mode === 'nov' || mode === 'noV') && !this.isInOperatorPending) {
+			this.isInOperatorPending = true;
+			console.log(`[ridiculous] Entering operator-pending mode`);
+		} else if (this.isInOperatorPending && mode !== 'no' && mode !== 'nov' && mode !== 'noV') {
+			console.log(`[ridiculous] Exiting operator-pending mode`);
+			// Don't reset immediately - let TextChanged handler show the effect
+			setTimeout(() => {
+				this.isInOperatorPending = false;
+			}, 100);
+		}
+
+		this.lastMode = mode;
+	}
+
+	private handleTextChangedVim(data: any): void {
+		// TextChanged fires after a delete, change, or other text-modifying operator
+		// This is where we can detect that an operator command just completed
+		if (this.lastMode === 'n' && !this.isInOperatorPending) {
+			// A command just completed that modified text
+			// We can infer it was likely d, c, or similar
+			const lastChange = data.lastChange || '';
+			console.log(`[ridiculous] Text changed in normal mode, last change: "${lastChange}"`);
+
+			// Show a generic operator effect for delete/change commands
+			this.showCommandEffect('EDIT');
+		}
+	}
+
+	private handleYank(data: any): void {
+		// TextYankPost fires after any yank operation (y, d, c, etc.)
+		const operator = data.operator || 'y';
+		const visual = data.visual || false;
+
+		console.log(`[ridiculous] Yank event: operator="${operator}", visual=${visual}`);
+
+		// Show effect for yank commands
+		if (operator === 'y') {
+			this.showCommandEffect('YANK');
+		} else if (operator === 'd') {
+			this.showCommandEffect('DELETE');
+		} else if (operator === 'c') {
+			this.showCommandEffect('CHANGE');
+		}
+	}
+
+	private showCommandEffect(command: string): void {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor || !command || this.settings.reducedEffects) {
+			return;
+		}
+
+		console.log(`[ridiculous] Showing effect for command: "${command}"`);
+
+		// Show the command as a text effect with boom animation
+		if (this.settings.chars) {
+			this.effects.showBoom(editor, true, this.settings.shake, command);
+		}
+
+		// Play boom sound for commands
+		if (this.settings.sound) {
+			this.post({ type: "boom", enabled: true });
+		}
 	}
 
 	private sanitizeLabel(ch: string): string {
