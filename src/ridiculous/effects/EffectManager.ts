@@ -49,7 +49,9 @@ export class EffectManager {
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
 
-    const media = vscode.Uri.joinPath(this.context.extensionUri, "media");
+    console.log('[EffectManager] Initializing with extensionUri:', context.extensionUri.fsPath);
+    const media = vscode.Uri.joinPath(this.context.extensionUri, "src", "ridiculous", "media");
+    console.log('[EffectManager] Media path:', media.fsPath);
     const blipIcon = vscode.Uri.joinPath(media, "blip.svg");
     const boomIcon = vscode.Uri.joinPath(media, "boom.svg");
     const newlineIcon = vscode.Uri.joinPath(media, "newline.svg");
@@ -221,11 +223,14 @@ export class EffectManager {
   private getFontBase64(): string | undefined {
     if (this.fontBase64) return this.fontBase64;
     try {
-      const fontUri = vscode.Uri.joinPath(this.context.extensionUri, "media", "font", "GravityBold8.ttf");
+      const fontUri = vscode.Uri.joinPath(this.context.extensionUri, "src", "ridiculous", "media", "font", "GravityBold8.ttf");
+      console.log('[EffectManager] Loading font from:', fontUri.fsPath);
       const buf = fs.readFileSync(fontUri.fsPath);
       this.fontBase64 = Buffer.from(buf).toString("base64");
+      console.log('[EffectManager] Font loaded successfully, base64 length:', this.fontBase64.length);
       return this.fontBase64;
-    } catch {
+    } catch (err) {
+      console.error('[EffectManager] Failed to load font:', err);
       return undefined;
     }
   }
@@ -285,9 +290,10 @@ export class EffectManager {
 
   private async ensureSpriteData(kind: EffectKind): Promise<void> {
     if (this.spriteData && this.spriteData[kind]) return;
-    const dir = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'animations');
+    const dir = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'ridiculous', 'media', 'animations');
     const tscnUri = vscode.Uri.joinPath(dir, `${kind}.tscn`);
     const pngUri = vscode.Uri.joinPath(dir, `${kind}.png`);
+    console.log('[EffectManager] Loading sprite data from:', dir.fsPath);
     const tscnText = fs.readFileSync(tscnUri.fsPath, 'utf8');
     const pngB64 = Buffer.from(fs.readFileSync(pngUri.fsPath)).toString('base64');
     
@@ -349,7 +355,11 @@ export class EffectManager {
   private async playSpriteAnim(editor: vscode.TextEditor, kind: EffectKind) {
     await this.ensureSpriteData(kind);
     const data = this.spriteData![kind];
-    if (!data || !data.frames.length) return;
+    console.log(`[EffectManager] playSpriteAnim ${kind}, frames:`, data?.frames?.length);
+    if (!data || !data.frames.length) {
+      console.error(`[EffectManager] No sprite data for ${kind}`);
+      return;
+    }
     // Cancel any running anim for this kind
     let map = this.runningSpriteAnim.get(editor);
     if (!map) { map = {}; this.runningSpriteAnim.set(editor, map); }
@@ -358,9 +368,15 @@ export class EffectManager {
     const caretRange = this.caretRange(editor);
     const total = data.frameUris.length;
     const frameMs = Math.max(10, Math.round(1000 / data.fps));
+    console.log(`[EffectManager] Starting ${kind} animation: ${total} frames at ${frameMs}ms per frame`);
     let i = 0;
     const step = () => {
-      if (i >= total) { editor.setDecorations(this.animDecoration, []); delete map![kind]; return; }
+      if (i >= total) {
+        console.log(`[EffectManager] ${kind} animation complete`);
+        editor.setDecorations(this.animDecoration, []);
+        delete map![kind];
+        return;
+      }
       const idx = i++;
       const icon = data.frameUris[idx];
       let opt: vscode.DecorationOptions;
@@ -583,9 +599,12 @@ export class EffectManager {
     let didVisual = false;
     if (now - state.lastBlipAt >= 20) {
       state.lastBlipAt = now;
+      console.log('[EffectManager] showBlip called, showChars:', showChars, 'label:', charLabel);
       this.clearSpriteAnim(editor); // reset previous anims on new keypress
       this.applyOnce(editor, "blip", showChars ? charLabel : undefined);
-      this.playSpriteAnim(editor, 'blip');
+      this.playSpriteAnim(editor, 'blip').catch(err => {
+        console.error('[EffectManager] Error playing blip animation:', err);
+      });
       didVisual = true;
     }
   if (shake) this.shake(editor, 120);

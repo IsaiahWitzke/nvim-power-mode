@@ -31,6 +31,8 @@ export class RidiculousTracker implements NeovimPlugin {
 	private commandBuilder = '';
 	private lastMode = '';
 	private pendingCount = 0;
+	private lastUndoSeq = 0;
+	private lastTextChangeTime = 0;
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -51,9 +53,16 @@ export class RidiculousTracker implements NeovimPlugin {
 			reducedEffects: cfg.get("reducedEffects", false)
 		};
 
+		console.log('[ridiculous] RidiculousTracker initialized with settings:', this.settings);
+
 		// Initialize services
+		console.log('[ridiculous] Initializing XPService...');
 		this.xp = new XPService(context, this.settings.baseXp);
+
+		console.log('[ridiculous] Initializing EffectManager...');
 		this.effects = new EffectManager(context);
+
+		console.log('[ridiculous] Initializing PanelViewProvider...');
 		this.panelProvider = new PanelViewProvider(context);
 
 		// Register webview view provider
@@ -86,8 +95,7 @@ export class RidiculousTracker implements NeovimPlugin {
 		);
 
 		// Setup autocmd handlers for detecting vim command chains
-		// We'll use TextChanged in normal mode to detect when an operator command completes
-		// and TextYankPost to capture yank commands specifically
+		// We'll use various events to capture different operations
 		this.autocmdHandlers = [
 			{
 				event: 'ModeChanged',
@@ -104,11 +112,11 @@ export class RidiculousTracker implements NeovimPlugin {
 				event: 'TextChanged',
 				handler: (data) => this.handleTextChangedVim(data),
 				luaCallback: `
-					-- Try to capture the last executed command
-					local ok, reg = pcall(vim.fn.getreg, '.')
-					local cmd = ok and reg or ''
+					-- Store undo sequence number to detect undo/redo
+					local undotree = vim.fn.undotree()
+					local seq_cur = undotree.seq_cur or 0
 					return {
-						lastChange = cmd
+						undoSeq = seq_cur
 					}
 				`,
 			},
@@ -124,6 +132,17 @@ export class RidiculousTracker implements NeovimPlugin {
 						operator = operator,
 						regtype = regtype,
 						visual = visual
+					}
+				`,
+			},
+			{
+				event: 'TextChangedI',
+				handler: (data) => this.handleInsertModeChange(data),
+				luaCallback: `
+					-- Track insert mode changes for replace mode detection
+					local mode = vim.fn.mode()
+					return {
+						mode = mode
 					}
 				`,
 			},
@@ -214,16 +233,24 @@ export class RidiculousTracker implements NeovimPlugin {
 
 	private handleTextDocumentChange(evt: vscode.TextDocumentChangeEvent): void {
 		const editor = vscode.window.activeTextEditor;
-		if (!editor || evt.document !== editor.document) return;
+		if (!editor || evt.document !== editor.document) {
+			console.log('[ridiculous] handleTextDocumentChange: no editor or document mismatch');
+			return;
+		}
 
 		const change = evt.contentChanges[0];
-		if (!change) return;
+		if (!change) {
+			console.log('[ridiculous] handleTextDocumentChange: no changes');
+			return;
+		}
 
 		// Classify
 		const insertedText = change.text ?? "";
 		const removedChars = change.rangeLength ?? 0;
 		const isInsert = insertedText.length > 0;
 		const isDelete = !isInsert && removedChars > 0;
+
+		console.log(`[ridiculous] TextChange: insert="${insertedText}", delete=${isDelete}, blips=${this.settings.blips}, reducedEffects=${this.settings.reducedEffects}`);
 
 		const caret = editor.selection.active;
 		const charLabel =
@@ -234,6 +261,7 @@ export class RidiculousTracker implements NeovimPlugin {
 				: undefined;
 
 		if (isInsert && this.settings.blips && !this.settings.reducedEffects) {
+			console.log(`[ridiculous] Calling showBlip with label: "${charLabel}"`);
 			if (this.settings.sound && !this.revealedForSound) {
 				this.revealedForSound = true;
 				this.panelProvider.reveal();
@@ -299,17 +327,40 @@ export class RidiculousTracker implements NeovimPlugin {
 	}
 
 	private handleTextChangedVim(data: any): void {
-		// TextChanged fires after a delete, change, or other text-modifying operator
-		// This is where we can detect that an operator command just completed
-		if (this.lastMode === 'n' && !this.isInOperatorPending) {
-			// A command just completed that modified text
-			// We can infer it was likely d, c, or similar
-			const lastChange = data.lastChange || '';
-			console.log(`[ridiculous] Text changed in normal mode, last change: "${lastChange}"`);
+		// TextChanged fires after delete, change, paste, undo, redo, or other text-modifying operations
+		const now = Date.now();
+		const undoSeq = data.undoSeq || 0;
+		const timeSinceLastChange = now - this.lastTextChangeTime;
 
-			// Show a generic operator effect for delete/change commands
-			this.showCommandEffect('EDIT');
+		console.log(`[ridiculous] TextChanged: mode=${this.lastMode}, opPending=${this.isInOperatorPending}, undoSeq=${undoSeq}, lastUndoSeq=${this.lastUndoSeq}`);
+
+		// Skip if we're in operator-pending (the operation will be caught by TextYankPost)
+		if (this.isInOperatorPending) {
+			this.lastUndoSeq = undoSeq;
+			this.lastTextChangeTime = now;
+			return;
 		}
+
+		if (this.lastMode === 'n') {
+			// Detect undo (sequence goes backward) or redo (sequence goes forward after undo)
+			const seqDelta = undoSeq - this.lastUndoSeq;
+
+			if (this.lastUndoSeq > 0) {
+				if (seqDelta < 0) {
+					// Undo - sequence decreased
+					this.showCommandEffect('UNDO');
+				} else if (seqDelta > 0 && timeSinceLastChange < 100) {
+					// Redo - sequence increased (and quick timing suggests it's redo not a new edit)
+					this.showCommandEffect('REDO');
+				} else if (timeSinceLastChange < 100) {
+					// Other quick operation in normal mode (paste, repeat, etc.)
+					this.showCommandEffect('PASTE');
+				}
+			}
+		}
+
+		this.lastUndoSeq = undoSeq;
+		this.lastTextChangeTime = now;
 	}
 
 	private handleYank(data: any): void {
@@ -326,6 +377,16 @@ export class RidiculousTracker implements NeovimPlugin {
 			this.showCommandEffect('DELETE');
 		} else if (operator === 'c') {
 			this.showCommandEffect('CHANGE');
+		}
+	}
+
+	private handleInsertModeChange(data: any): void {
+		const mode = data.mode || '';
+
+		// Detect replace mode (R or r)
+		if (mode === 'R') {
+			console.log('[ridiculous] Replace mode detected');
+			// Don't show effect here - it will show on the actual text change
 		}
 	}
 
