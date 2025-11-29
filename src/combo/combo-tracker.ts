@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { ComboMeter } from './combo-meter';
+import { NeovimPlugin } from '../nvim/plugin';
+import { AutocmdHandler } from '../nvim/neovim-client';
 
 export interface ComboTrackerOptions {
 	comboTimeout: number; // seconds
@@ -7,11 +9,12 @@ export interface ComboTrackerOptions {
 	outputChannel: vscode.OutputChannel;
 }
 
-export class ComboTracker {
+export class ComboTracker implements NeovimPlugin {
 	private readonly comboMeter: ComboMeter;
 	private readonly outputChannel: vscode.OutputChannel;
 	private readonly comboTimeout: number;
 	private readonly powermodeThreshold: number;
+	private readonly autocmdHandlers: readonly AutocmdHandler[];
 
 	private currentCombo = 0;
 	private comboTimeoutHandle: NodeJS.Timeout | null = null;
@@ -22,13 +25,35 @@ export class ComboTracker {
 		this.comboTimeout = options.comboTimeout;
 		this.powermodeThreshold = options.powermodeThreshold;
 		this.comboMeter = new ComboMeter();
+
+		// Define handlers that reference this instance's methods
+		this.autocmdHandlers = [
+			{
+				event: 'TextChangedI',
+				handler: (_data) => {
+					this.outputChannel.appendLine('Insert mode text change');
+					this.handleTextChange();
+				},
+			},
+			{
+				event: 'TextChanged',
+				handler: (_data) => {
+					this.outputChannel.appendLine('Normal mode text change (includes undo/redo)');
+					this.handleTextChange();
+				},
+			},
+		];
+	}
+
+	public getAutocmdHandlers(): readonly AutocmdHandler[] {
+		return this.autocmdHandlers;
 	}
 
 	private isReadOnlyEditor(editor: vscode.TextEditor): boolean {
 		return /^(output|debug|vscode-.*)/.test(editor.document.uri.scheme);
 	}
 
-	public handleTextChange(): void {
+	private handleTextChange(): void {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			return;

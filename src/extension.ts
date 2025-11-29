@@ -1,47 +1,30 @@
 import * as vscode from 'vscode';
 import { ComboTracker } from './combo/combo-tracker';
-import { NeovimClientManager, AutocmdHandler } from './nvim/neovim-client';
+import { NeovimClientManager } from './nvim/neovim-client';
+import { NeovimPlugin } from './nvim/plugin';
 
 const COMBO_TIMEOUT = 5; // seconds
 const POWERMODE_THRESHOLD = 10;
 
 let neovimClientManager: NeovimClientManager | null = null;
-let comboTracker: ComboTracker | null = null;
+let plugins: NeovimPlugin[] = [];
 let outputChannel: vscode.OutputChannel;
 
 export function activate(context: vscode.ExtensionContext) {
 	outputChannel = vscode.window.createOutputChannel('Neovim power mode events');
 	context.subscriptions.push(outputChannel);
 
-	comboTracker = new ComboTracker({
-		comboTimeout: COMBO_TIMEOUT,
-		powermodeThreshold: POWERMODE_THRESHOLD,
-		outputChannel,
-	});
-
-	const autocmdHandlers: AutocmdHandler[] = [
-		{
-			event: 'TextChangedI',
-			handler: (_data) => {
-				outputChannel.appendLine(`Insert mode text change`);
-				comboTracker?.handleTextChange();
-			},
-		},
-		{
-			event: 'TextChanged',
-			handler: (_data) => {
-				outputChannel.appendLine(`Normal mode text change (includes undo/redo)`);
-				comboTracker?.handleTextChange();
-			},
-		},
-		{
-			event: 'ModeChanged',
-			handler: (data) => {
-				outputChannel.appendLine(`Mode changed to: ${data.mode}`);
-			},
-			luaCallback: 'local mode = vim.fn.mode()\nreturn { mode = mode }',
-		},
+	// Initialize plugins
+	plugins = [
+		new ComboTracker({
+			comboTimeout: COMBO_TIMEOUT,
+			powermodeThreshold: POWERMODE_THRESHOLD,
+			outputChannel,
+		}),
 	];
+
+	// Collect all autocmd handlers from plugins
+	const autocmdHandlers = plugins.flatMap(plugin => [...plugin.getAutocmdHandlers()]);
 
 	neovimClientManager = new NeovimClientManager(outputChannel, autocmdHandlers);
 	neovimClientManager.connect()
@@ -52,8 +35,10 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-	comboTracker?.dispose();
-	comboTracker = null;
+	for (const plugin of plugins) {
+		plugin.dispose();
+	}
+	plugins = [];
 	neovimClientManager?.dispose();
 	neovimClientManager = null;
 }
