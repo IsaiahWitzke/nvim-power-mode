@@ -20,16 +20,22 @@ export class ComboMeter {
 	private counterSize = 3;
 	private activeEditor: vscode.TextEditor | null = null;
 
-	private static readonly DEFAULT_CSS: Record<string, string | number> = {
-		'position': 'absolute',
-		'left': 'calc(100vw - 35rem)',
-		'top': '20px',
-		'font-family': 'monospace',
-		'font-weight': '900',
-		'z-index': '1',
-		'pointer-events': 'none',
-		'text-align': 'center',
-	};
+	private getDefaultCss(): Record<string, string | number> {
+		const minimapEnabled = vscode.workspace.getConfiguration('editor').get<boolean>('minimap.enabled', true);
+		// Shift left by ~10rem when minimap is visible to avoid overlap
+		const rightOffset = minimapEnabled ? '45rem' : '35rem';
+
+		return {
+			'position': 'absolute',
+			'left': `calc(100vw - ${rightOffset})`,
+			'top': '20px',
+			'font-family': 'monospace',
+			'font-weight': '900',
+			'z-index': '1',
+			'pointer-events': 'none',
+			'text-align': 'center',
+		};
+	}
 
 	constructor() {
 		this.disposables.push(vscode.window.onDidChangeTextEditorVisibleRanges((e) => {
@@ -135,7 +141,7 @@ export class ComboMeter {
 			clearInterval(this.comboTimerDecorationTimer);
 		}
 
-		const baseCss = ComboMeter.objectToCssString(ComboMeter.DEFAULT_CSS);
+		const baseCss = ComboMeter.objectToCssString(this.getDefaultCss());
 
 		const updateTimer = () => {
 			// Stop if no active editor or editor changed
@@ -189,7 +195,7 @@ export class ComboMeter {
 			clearTimeout(this.comboCountAnimationTimer);
 		}
 
-		const baseCss = ComboMeter.objectToCssString(ComboMeter.DEFAULT_CSS);
+		const baseCss = ComboMeter.objectToCssString(this.getDefaultCss());
 
 		const animate = (frameCount: number) => {
 			// Stop if no active editor
