@@ -85,22 +85,32 @@ export class NeovimClientManager {
 		}
 
 		// Set up notification handler that dispatches to registered handlers
-		const handlerMap = new Map(this.autocmdHandlers.map(h => [h.event, h.handler]));
-		
+		// Build a map of event -> array of handlers to support multiple handlers per event
+		const handlerMap = new Map<string, Array<(data: any) => void>>();
+		for (const handler of this.autocmdHandlers) {
+			if (!handlerMap.has(handler.event)) {
+				handlerMap.set(handler.event, []);
+			}
+			handlerMap.get(handler.event)!.push(handler.handler);
+		}
+
 		client.on('notification', (method: string, args: any[]) => {
 			if (method === 'power-mode') {
 				const [payload] = args;
 				const { event, data } = payload;
-				
-				const handler = handlerMap.get(event);
-				if (handler) {
-					handler(data);
+
+				const handlers = handlerMap.get(event);
+				if (handlers && handlers.length > 0) {
+					// Call all handlers for this event
+					for (const handler of handlers) {
+						handler(data);
+					}
 				} else {
 					this.outputChannel.appendLine(`No handler for event: ${event}`);
 				}
 				return;
 			}
-			
+
 			// Log other non-redraw events for debugging
 			if (method !== 'redraw') {
 				this.outputChannel.appendLine(`Neovim Event: ${method}`);

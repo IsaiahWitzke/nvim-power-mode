@@ -106,13 +106,13 @@ export class PanelViewProvider implements vscode.WebviewViewProvider {
   private getHtml(webview: vscode.Webview): string {
     const nonce = Math.random().toString(36).slice(2);
     const cssUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "webview", "panel.css")
+      vscode.Uri.joinPath(this.context.extensionUri, "src", "ridiculous", "webview", "panel.css")
     );
     const jsUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "webview", "panel.js")
+      vscode.Uri.joinPath(this.context.extensionUri, "src", "ridiculous", "webview", "panel.js")
     );
     const logoUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "icons", "icon.svg")
+      vscode.Uri.joinPath(this.context.extensionUri, "src", "ridiculous", "media", "icons", "icon.svg")
     );
 
     return `<!DOCTYPE html>
