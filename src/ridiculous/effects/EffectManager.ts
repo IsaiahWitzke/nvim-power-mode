@@ -599,7 +599,7 @@ export class EffectManager {
     let didVisual = false;
     if (now - state.lastBlipAt >= 20) {
       state.lastBlipAt = now;
-      console.log('[EffectManager] showBlip called, showChars:', showChars, 'label:', charLabel);
+      // console.log('[EffectManager] showBlip called, showChars:', showChars, 'label:', charLabel);
       this.clearSpriteAnim(editor); // reset previous anims on new keypress
       this.applyOnce(editor, "blip", showChars ? charLabel : undefined);
       this.playSpriteAnim(editor, 'blip').catch(err => {

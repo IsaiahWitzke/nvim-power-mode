@@ -3,7 +3,7 @@ export type Settings = {
   blips: boolean;
   chars: boolean;
   shake: boolean;
-  // UI toggles don’t expose amplitude/decay for now; still include for typing
+  // UI toggles don't expose amplitude/decay for now; still include for typing
   // and message payload completeness if needed later
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
@@ -15,6 +15,8 @@ export type Settings = {
   baseXp: number;
   enableStatusBar: boolean;
   reducedEffects: boolean;
+  nativeSound: boolean;
+  explosionVolume: number;
 };
 
 export type PanelMessageFromExt =
@@ -27,5 +29,6 @@ export type PanelMessageFromExt =
 export type PanelMessageToExt =
   | { type: "ready" }
   | { type: "toggle"; key: keyof Settings; value: boolean }
+  | { type: "volumeChange"; key: "explosionVolume"; value: number }
   | { type: "resetXp" }
   | { type: "requestState" };

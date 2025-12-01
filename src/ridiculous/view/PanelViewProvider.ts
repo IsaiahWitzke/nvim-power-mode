@@ -24,12 +24,13 @@ export class PanelViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((msg: PanelMessageToExt) => {
       switch (msg.type) {
         case "ready":
-          const soundBase = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'sound');
+          const soundBase = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'ridiculous', 'media', 'sound');
           const soundUris = {
             blip: webviewView.webview.asWebviewUri(vscode.Uri.joinPath(soundBase, 'blip.wav')).toString(),
             boom: webviewView.webview.asWebviewUri(vscode.Uri.joinPath(soundBase, 'boom.wav')).toString(),
             fireworks: webviewView.webview.asWebviewUri(vscode.Uri.joinPath(soundBase, 'fireworks.wav')).toString()
           };
+          console.log('[PanelViewProvider] Sound URIs:', soundUris);
           this.post({
             type: "init",
             settings: this.getSettings(),
@@ -41,6 +42,9 @@ export class PanelViewProvider implements vscode.WebviewViewProvider {
           });
           break;
         case "toggle":
+          this.updateSetting(msg.key, msg.value);
+          break;
+        case "volumeChange":
           this.updateSetting(msg.key, msg.value);
           break;
         case "resetXp":
@@ -80,7 +84,9 @@ export class PanelViewProvider implements vscode.WebviewViewProvider {
       fireworks: cfg.get("fireworks", true),
       baseXp: cfg.get("leveling.baseXp", 50),
       enableStatusBar: cfg.get("enableStatusBar", true),
-      reducedEffects: cfg.get("reducedEffects", false)
+      reducedEffects: cfg.get("reducedEffects", false),
+      nativeSound: cfg.get("nativeSound", true),
+      explosionVolume: cfg.get("explosionVolume", 0.3)
     };
   }
 
@@ -96,7 +102,9 @@ export class PanelViewProvider implements vscode.WebviewViewProvider {
       fireworks: "fireworks",
       baseXp: "leveling.baseXp",
       enableStatusBar: "enableStatusBar",
-      reducedEffects: "reducedEffects"
+      reducedEffects: "reducedEffects",
+      nativeSound: "nativeSound",
+      explosionVolume: "explosionVolume"
     };
     const configKey = map[key];
     if (!configKey) return;
@@ -145,6 +153,13 @@ export class PanelViewProvider implements vscode.WebviewViewProvider {
         <label class="toggle-pill"><input id="sound" type="checkbox"><span>Sound</span></label>
         <label class="toggle-pill"><input id="fireworks" type="checkbox"><span>Fireworks</span></label>
         <label class="toggle-pill"><input id="reducedEffects" type="checkbox"><span>Reduced Effects</span></label>
+      </div>
+      <div class="volume-control">
+        <label for="explosionVolume" class="volume-label">
+          <span>Explosion Volume</span>
+          <span id="explosionVolumeValue">30%</span>
+        </label>
+        <input id="explosionVolume" type="range" min="0" max="100" step="1" value="30" class="volume-slider">
       </div>
     </section>
 

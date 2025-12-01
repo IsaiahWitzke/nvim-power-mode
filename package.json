@@ -22,8 +22,134 @@
       {
         "command": "nvim-power-mode.stop",
         "title": "Nvim Power Mode: Stop Neovim Client"
+      },
+      {
+        "command": "ridiculousCoding.showPanel",
+        "title": "Ridiculous Coding: Show Panel"
+      },
+      {
+        "command": "ridiculousCoding.resetXp",
+        "title": "Ridiculous Coding: Reset XP"
+      },
+      {
+        "command": "ridiculousCoding.toggleExplosions",
+        "title": "Ridiculous Coding: Toggle Explosions"
+      },
+      {
+        "command": "ridiculousCoding.toggleBlips",
+        "title": "Ridiculous Coding: Toggle Blips"
+      },
+      {
+        "command": "ridiculousCoding.toggleChars",
+        "title": "Ridiculous Coding: Toggle Char Labels"
+      },
+      {
+        "command": "ridiculousCoding.toggleShake",
+        "title": "Ridiculous Coding: Toggle Shake"
+      },
+      {
+        "command": "ridiculousCoding.toggleSound",
+        "title": "Ridiculous Coding: Toggle Sound"
+      },
+      {
+        "command": "ridiculousCoding.toggleFireworks",
+        "title": "Ridiculous Coding: Toggle Fireworks"
+      },
+      {
+        "command": "ridiculousCoding.toggleReducedEffects",
+        "title": "Ridiculous Coding: Toggle Reduced Effects"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ridiculousCoding",
+          "title": "Ridiculous Coding",
+          "icon": "src/ridiculous/media/icons/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ridiculousCoding": [
+        {
+          "type": "webview",
+          "id": "ridiculousCoding.panel",
+          "name": "Ridiculous Coding"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Ridiculous Coding",
+      "properties": {
+        "ridiculousCoding.explosions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable explosion effects on delete"
+        },
+        "ridiculousCoding.blips": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable blip effects on insert"
+        },
+        "ridiculousCoding.chars": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show character labels"
+        },
+        "ridiculousCoding.shake": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable screen shake"
+        },
+        "ridiculousCoding.shakeAmplitude": {
+          "type": "number",
+          "default": 6,
+          "description": "Screen shake amplitude in pixels"
+        },
+        "ridiculousCoding.shakeDecayMs": {
+          "type": "number",
+          "default": 120,
+          "description": "Screen shake decay time in milliseconds"
+        },
+        "ridiculousCoding.sound": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable sound effects"
+        },
+        "ridiculousCoding.nativeSound": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use native OS audio. If false, uses webview audio (requires clicking the panel once to unlock)."
+        },
+        "ridiculousCoding.fireworks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable fireworks on level up"
+        },
+        "ridiculousCoding.leveling.baseXp": {
+          "type": "number",
+          "default": 50,
+          "description": "Base XP required for leveling"
+        },
+        "ridiculousCoding.enableStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show XP and level in status bar"
+        },
+        "ridiculousCoding.reducedEffects": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reduce visual effects for better performance"
+        },
+        "ridiculousCoding.explosionVolume": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Volume for explosion sounds (0.0 to 1.0)"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -9,6 +9,8 @@
     sound: document.getElementById("sound"),
     fireworks: document.getElementById("fireworks"),
     reducedEffects: document.getElementById("reducedEffects"),
+    explosionVolume: document.getElementById("explosionVolume"),
+    explosionVolumeValue: document.getElementById("explosionVolumeValue"),
     levelLabel: document.getElementById("levelLabel"),
     xpLabel: document.getElementById("xpLabel"),
     barInner: document.getElementById("barInner"),
@@ -16,6 +18,9 @@
     testFireworks: document.getElementById("testFireworks"),
     fwCanvas: document.getElementById("fwCanvas")
   };
+
+  // Track current explosion volume
+  let explosionVolume = 0.3;
 
   // WebAudio engine using decoded WAV buffers
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -28,28 +33,51 @@
   }
   async function preloadSounds(uris) {
     try {
+      console.log('[panel.js] preloadSounds called with:', uris);
       actx = actx || new AudioCtx();
       const entries = Object.entries(uris);
       for (const [k, u] of entries) {
+        console.log(`[panel.js] Fetching ${k} from ${u}`);
         const ab = await fetchArrayBuffer(u);
         buffers[k] = await actx.decodeAudioData(ab);
+        console.log(`[panel.js] ${k} loaded successfully`);
       }
-    } catch {}
+      console.log('[panel.js] All sounds preloaded');
+    } catch (err) {
+      console.error('[panel.js] Error preloading sounds:', err);
+    }
   }
   async function unlockAudio() {
-    if (audioUnlocked) return;
+    if (audioUnlocked) {
+      console.log('[panel.js] Audio already unlocked');
+      return;
+    }
     try {
+      console.log('[panel.js] Unlocking audio...');
       actx = actx || new AudioCtx();
+      console.log('[panel.js] AudioContext state:', actx.state);
       if (actx.state === 'suspended') await actx.resume();
       audioUnlocked = true;
+      console.log('[panel.js] Audio unlocked successfully');
       const n = document.getElementById('soundNotice');
       if (n) n.remove();
-    } catch {}
+    } catch (err) {
+      console.error('[panel.js] Error unlocking audio:', err);
+    }
   }
   function playWav(kind, opts = {}) {
     try {
-      if (!audioUnlocked || !buffers[kind]) return;
+      console.log(`[panel.js] playWav called: kind=${kind}, audioUnlocked=${audioUnlocked}, bufferExists=${!!buffers[kind]}`);
+      if (!audioUnlocked) {
+        console.log('[panel.js] Audio not unlocked, skipping playback');
+        return;
+      }
+      if (!buffers[kind]) {
+        console.log(`[panel.js] Buffer for ${kind} not loaded, skipping playback`);
+        return;
+      }
       if (actx && actx.state === 'suspended') {
+        console.log('[panel.js] Resuming suspended AudioContext');
         actx.resume().catch(() => {});
       }
       const src = actx.createBufferSource();
@@ -58,10 +86,18 @@
         src.playbackRate.value = Math.max(0.5, Math.min(3.0, opts.playbackRate));
       }
       const gain = actx.createGain();
-      gain.gain.value = 0.5;
+      // Apply custom volume for boom (explosion) sounds
+      if (kind === 'boom') {
+        gain.gain.value = explosionVolume;
+      } else {
+        gain.gain.value = 0.5;
+      }
       src.connect(gain).connect(actx.destination);
       src.start();
-    } catch {}
+      console.log(`[panel.js] Playing ${kind} with playbackRate=${opts.playbackRate || 1.0}, volume=${gain.gain.value}`);
+    } catch (err) {
+      console.error('[panel.js] Error playing sound:', err);
+    }
   }
 
   // Fireworks particles on canvas
@@ -116,6 +152,14 @@
     });
   });
 
+  // Wire volume slider
+  els.explosionVolume.addEventListener("input", () => {
+    const value = parseInt(els.explosionVolume.value) / 100;
+    explosionVolume = value;
+    els.explosionVolumeValue.textContent = `${els.explosionVolume.value}%`;
+    vscode.postMessage({ type: "volumeChange", key: "explosionVolume", value });
+  });
+
   els.resetBtn.addEventListener("click", () => vscode.postMessage({ type: "resetXp" }));
   els.testFireworks.addEventListener("click", () => {
     // Play sound if enabled (same as real fireworks)
@@ -134,8 +178,10 @@
 
   window.addEventListener("message", e => {
     const msg = e.data;
+    console.log('[panel.js] Received message:', msg.type, msg);
     switch (msg.type) {
       case "init":
+        console.log('[panel.js] Initializing panel with settings:', msg.settings);
         // Settings
         els.explosions.checked = msg.settings.explosions;
         els.blips.checked = msg.settings.blips;
@@ -144,6 +190,10 @@
         els.sound.checked = msg.settings.sound;
         els.fireworks.checked = msg.settings.fireworks;
         els.reducedEffects.checked = msg.settings.reducedEffects;
+        // Volume
+        explosionVolume = msg.settings.explosionVolume;
+        els.explosionVolume.value = Math.round(explosionVolume * 100);
+        els.explosionVolumeValue.textContent = `${els.explosionVolume.value}%`;
   preloadSounds({ blip: msg.soundUris.blip, boom: msg.soundUris.boom, fireworks: msg.soundUris.fireworks });
   // Unlock audio on first interaction
   document.addEventListener('click', unlockAudio, { once: true });
@@ -154,12 +204,15 @@
         setState(msg);
         break;
       case "blip":
+        // console.log('[panel.js] Blip message received, enabled:', msg.enabled, 'pitch:', msg.pitch);
         if (msg.enabled) playWav('blip', { playbackRate: msg.pitch ?? 1.0 });
         break;
       case "boom":
+        console.log('[panel.js] Boom message received, enabled:', msg.enabled);
         if (msg.enabled) playWav('boom');
         break;
       case "fireworks":
+        console.log('[panel.js] Fireworks message received, enabled:', msg.enabled);
         if (msg.enabled) playWav('fireworks');
         fw.start();
         break;

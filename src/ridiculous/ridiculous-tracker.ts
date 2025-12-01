@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { EffectManager } from './effects/EffectManager';
 import { XPService } from './xp/XPService';
 import { PanelViewProvider } from './view/PanelViewProvider';
+import { NativeSoundPlayer } from './sound/NativeSoundPlayer';
 import { NeovimPlugin } from '../nvim/plugin';
 import { AutocmdHandler } from '../nvim/neovim-client';
 import { Settings, PanelMessageFromExt } from './types';
@@ -14,6 +15,7 @@ export class RidiculousTracker implements NeovimPlugin {
 	private xp: XPService;
 	private effects: EffectManager;
 	private panelProvider: PanelViewProvider;
+	private nativeSoundPlayer: NativeSoundPlayer;
 	private status: vscode.StatusBarItem;
 	private disposables: vscode.Disposable[] = [];
 
@@ -50,7 +52,9 @@ export class RidiculousTracker implements NeovimPlugin {
 			fireworks: cfg.get("fireworks", true),
 			baseXp: cfg.get("leveling.baseXp", 50),
 			enableStatusBar: cfg.get("enableStatusBar", true),
-			reducedEffects: cfg.get("reducedEffects", false)
+			reducedEffects: cfg.get("reducedEffects", false),
+			nativeSound: cfg.get("nativeSound", true),
+			explosionVolume: cfg.get("explosionVolume", 0.3)
 		};
 
 		console.log('[ridiculous] RidiculousTracker initialized with settings:', this.settings);
@@ -61,6 +65,11 @@ export class RidiculousTracker implements NeovimPlugin {
 
 		console.log('[ridiculous] Initializing EffectManager...');
 		this.effects = new EffectManager(context);
+
+		console.log('[ridiculous] Initializing NativeSoundPlayer...');
+		this.nativeSoundPlayer = new NativeSoundPlayer(context);
+		this.nativeSoundPlayer.setEnabled(this.settings.sound && this.settings.nativeSound);
+		console.log(`[ridiculous] NativeSoundPlayer enabled: ${this.settings.sound && this.settings.nativeSound}`);
 
 		console.log('[ridiculous] Initializing PanelViewProvider...');
 		this.panelProvider = new PanelViewProvider(context);
@@ -209,8 +218,13 @@ export class RidiculousTracker implements NeovimPlugin {
 			fireworks: cfg.get("fireworks", true),
 			baseXp: cfg.get("leveling.baseXp", 50),
 			enableStatusBar: cfg.get("enableStatusBar", true),
-			reducedEffects: cfg.get("reducedEffects", false)
+			reducedEffects: cfg.get("reducedEffects", false),
+			nativeSound: cfg.get("nativeSound", true),
+			explosionVolume: cfg.get("explosionVolume", 0.3)
 		};
+
+		// Update native sound player enabled state
+		this.nativeSoundPlayer.setEnabled(this.settings.sound && this.settings.nativeSound);
 
 		// If reduced effects was just enabled, clear all decorations
 		if (!oldReducedEffects && this.settings.reducedEffects) {
@@ -250,7 +264,7 @@ export class RidiculousTracker implements NeovimPlugin {
 		const isInsert = insertedText.length > 0;
 		const isDelete = !isInsert && removedChars > 0;
 
-		console.log(`[ridiculous] TextChange: insert="${insertedText}", delete=${isDelete}, blips=${this.settings.blips}, reducedEffects=${this.settings.reducedEffects}`);
+		// console.log(`[ridiculous] TextChange: insert="${insertedText}", delete=${isDelete}, blips=${this.settings.blips}, reducedEffects=${this.settings.reducedEffects}`);
 
 		const caret = editor.selection.active;
 		const charLabel =
@@ -261,8 +275,8 @@ export class RidiculousTracker implements NeovimPlugin {
 				: undefined;
 
 		if (isInsert && this.settings.blips && !this.settings.reducedEffects) {
-			console.log(`[ridiculous] Calling showBlip with label: "${charLabel}"`);
-			if (this.settings.sound && !this.revealedForSound) {
+			// console.log(`[ridiculous] Calling showBlip with label: "${charLabel}"`);
+			if (this.settings.sound && !this.revealedForSound && !this.settings.nativeSound) {
 				this.revealedForSound = true;
 				this.panelProvider.reveal();
 			}
@@ -271,10 +285,28 @@ export class RidiculousTracker implements NeovimPlugin {
 			if (this.pitchResetTimer) clearTimeout(this.pitchResetTimer);
 			this.pitchResetTimer = setTimeout(() => { this.pitchIncrease = 0; }, this.PITCH_RESET_MS);
 			const pitch = 1.0 + Math.min(20, this.pitchIncrease) * 0.05;
-			this.post({ type: "blip", pitch, enabled: this.settings.sound && !this.settings.reducedEffects });
+
+			// Use native sound or webview sound
+			if (this.settings.sound && !this.settings.reducedEffects) {
+				// console.log(`[ridiculous] Playing blip sound: nativeSound=${this.settings.nativeSound}, pitch=${pitch}`);
+				if (this.settings.nativeSound) {
+					this.nativeSoundPlayer.play("blip", pitch);
+				} else {
+					// console.log(`[ridiculous] Posting blip to webview`);
+					this.post({ type: "blip", pitch, enabled: true });
+				}
+			} else {
+				console.log(`[ridiculous] Sound skipped: sound=${this.settings.sound}, reducedEffects=${this.settings.reducedEffects}`);
+			}
+
 			const leveled = this.xp.addXp(1);
 			if (leveled && this.settings.fireworks && !this.settings.reducedEffects) {
-				this.post({ type: "fireworks", enabled: this.settings.sound && !this.settings.reducedEffects });
+				if (this.settings.nativeSound) {
+					this.nativeSoundPlayer.play("fireworks");
+					this.post({ type: "fireworks", enabled: false });
+				} else {
+					this.post({ type: "fireworks", enabled: true });
+				}
 			}
 			this.pushState();
 			this.updateStatus();
@@ -284,7 +316,13 @@ export class RidiculousTracker implements NeovimPlugin {
 			this.updateStatus();
 		} else if (isDelete && this.settings.explosions && !this.settings.reducedEffects) {
 			this.effects.showBoom(editor, this.settings.chars, this.settings.shake, charLabel);
-			this.post({ type: "boom", enabled: this.settings.sound && !this.settings.reducedEffects });
+			if (this.settings.sound && !this.settings.reducedEffects) {
+				if (this.settings.nativeSound) {
+					this.nativeSoundPlayer.play("boom");
+				} else {
+					this.post({ type: "boom", enabled: true });
+				}
+			}
 			this.pushState();
 		}
 
@@ -405,7 +443,11 @@ export class RidiculousTracker implements NeovimPlugin {
 
 		// Play boom sound for commands
 		if (this.settings.sound) {
-			this.post({ type: "boom", enabled: true });
+			if (this.settings.nativeSound) {
+				this.nativeSoundPlayer.play("boom");
+			} else {
+				this.post({ type: "boom", enabled: true });
+			}
 		}
 	}
 
@@ -443,6 +485,7 @@ export class RidiculousTracker implements NeovimPlugin {
 
 	public dispose(): void {
 		this.effects.dispose();
+		this.nativeSoundPlayer.dispose();
 		if (this.pitchResetTimer) {
 			clearTimeout(this.pitchResetTimer);
 		}
